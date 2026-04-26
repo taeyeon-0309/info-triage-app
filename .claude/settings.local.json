@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg *)",
+      "Bash(npm create *)",
+      "Bash(npx create-next-app@latest *)",
+      "Bash(rsync -a \"scaffold-tmp/\" \"./\")",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx prisma *)",
+      "Bash(node *)",
+      "Bash(npx playwright *)",
+      "Bash(curl *)",
+      "Bash(DEBUG=pw:webserver npx playwright *)"
+    ]
+  }
+}

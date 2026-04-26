@@ -1,0 +1,210 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SourcePlatform {
+  AI_NEWS
+  X
+  XIAOHONGSHU
+  WECHAT
+  WEBSITE
+  NEWSLETTER
+  RSS
+  MANUAL
+  OTHER
+}
+
+enum ContentStatus {
+  PENDING_ANALYSIS
+  ANALYZED
+  ANALYSIS_FAILED
+  ARCHIVED
+}
+
+enum ReadStatus {
+  UNREAD
+  READ
+  SKIPPED
+  SAVED
+}
+
+enum RecommendedAction {
+  DEEP_READ
+  SKIM
+  ARCHIVE
+  TRACK
+  SKIP
+}
+
+enum FeedbackType {
+  ACCURATE
+  ACTUALLY_IMPORTANT
+  SHOW_LESS_LIKE_THIS
+  SOURCE_HIGH_QUALITY
+  SOURCE_LOW_QUALITY
+  TRACK_THIS_TOPIC
+  BLOCK_THIS_SOURCE
+}
+
+model User {
+  id             String           @id @default(cuid())
+  email          String           @unique
+  name           String?
+  topics         Topic[]
+  sources        Source[]
+  contentItems   ContentItem[]
+  analyses       ContentAnalysis[]
+  feedbacks      ContentFeedback[]
+  dailyReports   DailyReport[]
+  preference     UserPreference?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model UserPreference {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  readingGoal       String?
+  preferredLanguage String   @default("zh-CN")
+  maxDailyMustRead  Int      @default(5)
+  maxDailySkim      Int      @default(10)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Topic {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  priority    Int      @default(50)
+  isActive    Boolean  @default(true)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, isActive])
+  @@unique([userId, name])
+}
+
+model Source {
+  id           String         @id @default(cuid())
+  userId       String
+  name         String
+  platform     SourcePlatform
+  url          String?
+  qualityScore Int            @default(50)
+  isBlocked    Boolean        @default(false)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItems ContentItem[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId, platform])
+  @@index([userId, isBlocked])
+}
+
+model ContentItem {
+  id            String          @id @default(cuid())
+  userId         String
+  sourceId       String?
+  title          String
+  url            String?
+  rawText        String?
+  extractedText  String?
+  summary        String?
+  platform       SourcePlatform
+  author         String?
+  publishedAt    DateTime?
+  submittedAt    DateTime        @default(now())
+  status         ContentStatus    @default(PENDING_ANALYSIS)
+  readStatus     ReadStatus       @default(UNREAD)
+  isUrlOnly      Boolean          @default(false)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source         Source?          @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  analyses       ContentAnalysis[]
+  feedbacks      ContentFeedback[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([userId, submittedAt])
+  @@index([userId, status])
+}
+
+model ContentAnalysis {
+  id                            String            @id @default(cuid())
+  contentItemId                 String
+  userId                        String
+  recommendedAction             RecommendedAction
+  readingValueScore             Int
+  informationGainScore          Int
+  sourceCredibilityScore        Int
+  personalRelevanceScore        Int
+  duplicationScore              Int
+  marketingSuspicionScore       Int
+  emotionalNoiseScore           Int
+  hasPrimarySource              Boolean
+  suspectedAiPackaging          Boolean
+  suspectedMultiLayerRepackaging Boolean
+  coreSummary                   String
+  coreClaims                    String[]
+  recommendationReasons         String[]
+  skipReasons                   String[]
+  suggestedReadingMethod        String
+  topicTags                     String[]
+  sourceTypeTags                String[]
+  valueTags                     String[]
+  analyzedAt                    DateTime          @default(now())
+  modelName                     String
+  version                       Int               @default(1)
+  requestId                     String
+  isCurrent                     Boolean           @default(true)
+  supersededAt                  DateTime?
+  rawModelOutput                Json?
+  contentItem                   ContentItem       @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  user                          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt                     DateTime          @default(now())
+  updatedAt                     DateTime          @updatedAt
+
+  @@index([contentItemId, isCurrent])
+  @@index([userId, analyzedAt])
+  @@unique([contentItemId, requestId])
+}
+
+model ContentFeedback {
+  id           String       @id @default(cuid())
+  userId       String
+  contentItemId String
+  feedbackType FeedbackType
+  note         String?
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contentItem  ContentItem  @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+
+  @@index([userId, contentItemId])
+}
+
+model DailyReport {
+  id             String   @id @default(cuid())
+  userId          String
+  date            DateTime
+  mustReadItemIds String[]
+  skimItemIds     String[]
+  skippedItemIds  String[]
+  trackedTopics   String[]
+  anomalySignals  Json[]
+  summary         String
+  generatedAt     DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
