@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getCurrentUserIdMock = vi.fn();
 const findFirstContentMock = vi.fn();
 const createFeedbackMock = vi.fn();
+const transactionMock = vi.fn();
+const updateSourceMock = vi.fn();
+const updateManySourceMock = vi.fn();
+const findFirstSourceMock = vi.fn();
+const upsertTopicMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUserId: getCurrentUserIdMock,
@@ -16,12 +21,36 @@ vi.mock("@/lib/db", () => ({
     contentFeedback: {
       create: createFeedbackMock,
     },
+    source: {
+      findFirst: findFirstSourceMock,
+      update: updateSourceMock,
+      updateMany: updateManySourceMock,
+    },
+    topic: {
+      upsert: upsertTopicMock,
+    },
+    $transaction: transactionMock,
   },
 }));
 
 describe("POST /api/content/[id]/feedback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    transactionMock.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        contentFeedback: {
+          create: createFeedbackMock,
+        },
+        source: {
+          findFirst: findFirstSourceMock,
+          update: updateSourceMock,
+          updateMany: updateManySourceMock,
+        },
+        topic: {
+          upsert: upsertTopicMock,
+        },
+      }),
+    );
   });
 
   it("returns 401 when not authenticated", async () => {
@@ -61,7 +90,7 @@ describe("POST /api/content/[id]/feedback", () => {
 
   it("creates feedback for authenticated user", async () => {
     getCurrentUserIdMock.mockResolvedValueOnce("user-1");
-    findFirstContentMock.mockResolvedValueOnce({ id: "content-1" });
+    findFirstContentMock.mockResolvedValueOnce({ id: "content-1", sourceId: null, analyses: [] });
     createFeedbackMock.mockResolvedValueOnce({
       id: "feedback-1",
       feedbackType: "ACCURATE",

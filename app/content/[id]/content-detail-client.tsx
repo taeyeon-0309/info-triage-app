@@ -8,6 +8,7 @@ type DetailItem = {
   url: string | null;
   rawText: string | null;
   summary: string | null;
+  note: string | null;
   platform: string;
   author: string | null;
   submittedAt: Date;
@@ -127,6 +128,7 @@ export default function ContentDetailClient({ item }: { item: DetailItem }) {
       <section className="rounded-xl border border-zinc-200 bg-white p-4 space-y-3">
         <h2 className="text-xl font-medium">原始内容</h2>
         <p className="text-sm text-zinc-700 whitespace-pre-wrap">{item.rawText || item.summary || "暂无正文"}</p>
+        {item.note ? <p className="text-sm text-zinc-500">备注：{item.note}</p> : null}
       </section>
 
       <section className="rounded-xl border border-zinc-200 bg-white p-4 space-y-3">
@@ -137,6 +139,7 @@ export default function ContentDetailClient({ item }: { item: DetailItem }) {
           </button>
         </div>
 
+        {item.isUrlOnly ? <p className="text-sm text-zinc-500">请补充正文或摘要后分析。</p> : null}
         {analysisStatus ? <p className="text-sm text-zinc-700">{analysisStatus}</p> : null}
 
         {a ? (

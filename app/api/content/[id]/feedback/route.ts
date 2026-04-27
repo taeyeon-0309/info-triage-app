@@ -1,3 +1,4 @@
+import { FeedbackType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/auth";
@@ -38,26 +39,87 @@ export async function POST(request: Request, context: ContentFeedbackRouteContex
 
   const current = await db.contentItem.findFirst({
     where: { id, userId },
-    select: { id: true },
+    select: {
+      id: true,
+      sourceId: true,
+      analyses: {
+        where: { isCurrent: true },
+        take: 1,
+        select: { topicTags: true },
+      },
+    },
   });
 
   if (!current) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const feedback = await db.contentFeedback.create({
-    data: {
-      userId,
-      contentItemId: current.id,
-      feedbackType: parsed.data.feedbackType,
-      note: parsed.data.note?.trim() || null,
-    },
-    select: {
-      id: true,
-      feedbackType: true,
-      note: true,
-      createdAt: true,
-    },
+  const feedback = await db.$transaction(async (tx) => {
+    const created = await tx.contentFeedback.create({
+      data: {
+        userId,
+        contentItemId: current.id,
+        feedbackType: parsed.data.feedbackType,
+        note: parsed.data.note?.trim() || null,
+      },
+      select: {
+        id: true,
+        feedbackType: true,
+        note: true,
+        createdAt: true,
+      },
+    });
+
+    if (current.sourceId && parsed.data.feedbackType === FeedbackType.SOURCE_HIGH_QUALITY) {
+      const source = await tx.source.findFirst({
+        where: { id: current.sourceId, userId },
+        select: { id: true, qualityScore: true },
+      });
+      if (source) {
+        await tx.source.update({
+          where: { id: source.id },
+          data: { qualityScore: Math.min(100, source.qualityScore + 10) },
+        });
+      }
+    }
+
+    if (current.sourceId && parsed.data.feedbackType === FeedbackType.SOURCE_LOW_QUALITY) {
+      const source = await tx.source.findFirst({
+        where: { id: current.sourceId, userId },
+        select: { id: true, qualityScore: true },
+      });
+      if (source) {
+        await tx.source.update({
+          where: { id: source.id },
+          data: { qualityScore: Math.max(0, source.qualityScore - 10) },
+        });
+      }
+    }
+
+    if (current.sourceId && parsed.data.feedbackType === FeedbackType.BLOCK_THIS_SOURCE) {
+      await tx.source.updateMany({
+        where: { id: current.sourceId, userId },
+        data: { isBlocked: true },
+      });
+    }
+
+    if (parsed.data.feedbackType === FeedbackType.TRACK_THIS_TOPIC) {
+      const topicName = parsed.data.note?.trim() || current.analyses[0]?.topicTags[0];
+      if (topicName) {
+        await tx.topic.upsert({
+          where: { userId_name: { userId, name: topicName } },
+          update: { isActive: true },
+          create: {
+            userId,
+            name: topicName,
+            priority: 70,
+            isActive: true,
+          },
+        });
+      }
+    }
+
+    return created;
   });
 
   return NextResponse.json({ feedback }, { status: 201 });

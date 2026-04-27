@@ -23,6 +23,7 @@ export async function GET(_request: Request, context: ContentDetailRouteContext)
       url: true,
       rawText: true,
       summary: true,
+      note: true,
       platform: true,
       author: true,
       publishedAt: true,

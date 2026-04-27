@@ -1,14 +1,27 @@
 import { z } from "zod";
 import { sourcePlatforms } from "@/lib/constants/platform";
 
+const optionalTrimmedString = (maxLength?: number) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    maxLength
+      ? z.string().trim().min(1).max(maxLength).optional()
+      : z.string().trim().min(1).optional(),
+  );
+
+const optionalUrl = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.url().optional(),
+);
+
 export const createContentSchema = z
   .object({
-    title: z.string().trim().min(1).max(300).optional(),
-    url: z.url().optional(),
-    rawText: z.string().trim().min(1).optional(),
+    title: optionalTrimmedString(300),
+    url: optionalUrl,
+    rawText: optionalTrimmedString(),
     platform: z.enum(sourcePlatforms),
-    author: z.string().trim().max(200).optional(),
-    note: z.string().trim().max(2000).optional(),
+    author: optionalTrimmedString(200),
+    note: optionalTrimmedString(2000),
   })
   .refine((value) => Boolean(value.url || value.rawText), {
     message: "url 与 rawText 至少需要一个",

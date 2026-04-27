@@ -1,3 +1,5 @@
+import { Prisma, ReadStatus, RecommendedAction, SourcePlatform } from "@prisma/client";
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { getCurrentUserId } from "@/lib/auth";
 
@@ -25,6 +27,27 @@ function buildQuery(searchParams: LibrarySearchParams) {
   return query.toString();
 }
 
+function parseDate(value?: string): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function mergeAnalysisFilter(
+  where: Prisma.ContentItemWhereInput,
+  filter: NonNullable<Prisma.ContentItemWhereInput["analyses"]>["some"],
+) {
+  where.analyses = {
+    some: {
+      ...(where.analyses?.some ?? {}),
+      ...filter,
+    },
+  };
+}
+
 export default async function LibraryPage({
   searchParams,
 }: {
@@ -43,50 +66,92 @@ export default async function LibraryPage({
 
   const params = await searchParams;
 
-  const where = {
+  const where: Prisma.ContentItemWhereInput = {
     userId,
-    ...(params.platform ? { platform: params.platform as never } : {}),
-    ...(params.readStatus ? { readStatus: params.readStatus as never } : {}),
-    ...(params.fromDate || params.toDate
-      ? {
-          submittedAt: {
-            ...(params.fromDate ? { gte: new Date(params.fromDate) } : {}),
-            ...(params.toDate ? { lte: new Date(params.toDate) } : {}),
-          },
-        }
-      : {}),
   };
 
-  const page = Number(params.page ?? "1") || 1;
-  const pageSize = Number(params.pageSize ?? "20") || 20;
+  if (params.platform && Object.values(SourcePlatform).includes(params.platform as SourcePlatform)) {
+    where.platform = params.platform as SourcePlatform;
+  }
 
-  const [total, items] = await Promise.all([
-    db.contentItem.count({ where }),
-    db.contentItem.findMany({
+  if (params.readStatus && Object.values(ReadStatus).includes(params.readStatus as ReadStatus)) {
+    where.readStatus = params.readStatus as ReadStatus;
+  }
+
+  const fromDate = parseDate(params.fromDate);
+  const toDate = parseDate(params.toDate);
+  if (fromDate || toDate) {
+    where.submittedAt = {
+      ...(fromDate ? { gte: fromDate } : {}),
+      ...(toDate ? { lte: toDate } : {}),
+    };
+  }
+
+  if (
+    params.recommendedAction &&
+    Object.values(RecommendedAction).includes(params.recommendedAction as RecommendedAction)
+  ) {
+    mergeAnalysisFilter(where, {
+      isCurrent: true,
+      recommendedAction: params.recommendedAction as RecommendedAction,
+    });
+  }
+
+  if (params.topic?.trim()) {
+    mergeAnalysisFilter(where, {
+      isCurrent: true,
+      topicTags: {
+        has: params.topic.trim(),
+      },
+    });
+  }
+
+  const page = Math.max(1, Number(params.page ?? "1") || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(params.pageSize ?? "20") || 20));
+  const sortBy = params.sortBy === "readingValue" ? "readingValue" : "submittedAt";
+
+  const total = await db.contentItem.count({ where });
+  const select = {
+    id: true,
+    title: true,
+    platform: true,
+    status: true,
+    readStatus: true,
+    submittedAt: true,
+    isUrlOnly: true,
+    analyses: {
+      where: { isCurrent: true },
+      take: 1,
+      select: {
+        recommendedAction: true,
+        readingValueScore: true,
+        topicTags: true,
+      },
+    },
+  } satisfies Prisma.ContentItemSelect;
+
+  const items =
+    sortBy === "readingValue"
+      ? (
+          await db.contentItem.findMany({
+            where,
+            orderBy: { submittedAt: "desc" },
+            select,
+          })
+        )
+          .sort((a, b) => {
+            const left = a.analyses[0]?.readingValueScore ?? -1;
+            const right = b.analyses[0]?.readingValueScore ?? -1;
+            return right - left || b.submittedAt.getTime() - a.submittedAt.getTime();
+          })
+          .slice((page - 1) * pageSize, page * pageSize)
+      : await db.contentItem.findMany({
       where,
       orderBy: { submittedAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: {
-        id: true,
-        title: true,
-        platform: true,
-        status: true,
-        readStatus: true,
-        submittedAt: true,
-        isUrlOnly: true,
-        analyses: {
-          where: { isCurrent: true },
-          take: 1,
-          select: {
-            recommendedAction: true,
-            readingValueScore: true,
-            topicTags: true,
-          },
-        },
-      },
-    }),
-  ]);
+      select,
+    });
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -128,7 +193,9 @@ export default async function LibraryPage({
               return (
                 <li key={item.id} className="rounded border border-zinc-200 p-4">
                   <div className="space-y-1">
-                    <p className="font-medium">{item.title}</p>
+                    <Link className="font-medium hover:underline" href={`/content/${item.id}`}>
+                      {item.title}
+                    </Link>
                     <p className="text-sm text-zinc-500">
                       {item.platform} · {item.status} · {item.readStatus}
                     </p>

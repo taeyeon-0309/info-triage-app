@@ -57,13 +57,21 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const created = await createContentItem(db, userId, parsed.data);
-    response.successCount += 1;
-    response.successes.push({
-      contentItemId: created.id,
-      status: created.status,
-      isUrlOnly: created.isUrlOnly,
-    });
+    try {
+      const created = await createContentItem(db, userId, parsed.data);
+      response.successCount += 1;
+      response.successes.push({
+        contentItemId: created.id,
+        status: created.status,
+        isUrlOnly: created.isUrlOnly,
+      });
+    } catch {
+      response.failedCount += 1;
+      response.failures.push({
+        index,
+        error: "Persist failed",
+      });
+    }
   }
 
   const statusCode = response.successCount > 0 ? 200 : 400;

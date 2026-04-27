@@ -37,6 +37,18 @@ function parseSortBy(value: string | null): "submittedAt" | "readingValue" {
   return "submittedAt";
 }
 
+function mergeAnalysisFilter(
+  where: Prisma.ContentItemWhereInput,
+  filter: NonNullable<Prisma.ContentItemWhereInput["analyses"]>["some"],
+) {
+  where.analyses = {
+    some: {
+      ...(where.analyses?.some ?? {}),
+      ...filter,
+    },
+  };
+}
+
 export async function GET(request: Request) {
   const userId = await getCurrentUserId();
 
@@ -87,56 +99,64 @@ export async function GET(request: Request) {
   }
 
   if (recommendedActionParam) {
-    where.analyses = {
-      some: {
-        isCurrent: true,
-        recommendedAction: recommendedActionParam as Prisma.EnumRecommendedActionFilter["equals"],
-      },
-    };
+    mergeAnalysisFilter(where, {
+      isCurrent: true,
+      recommendedAction: recommendedActionParam as Prisma.EnumRecommendedActionFilter["equals"],
+    });
   }
 
   if (topicParam) {
-    where.analyses = {
-      some: {
-        ...(where.analyses?.some ?? {}),
-        isCurrent: true,
-        topicTags: {
-          has: topicParam,
-        },
+    mergeAnalysisFilter(where, {
+      isCurrent: true,
+      topicTags: {
+        has: topicParam,
       },
-    };
+    });
   }
 
-  const [total, items] = await Promise.all([
-    db.contentItem.count({ where }),
-    db.contentItem.findMany({
+  const total = await db.contentItem.count({ where });
+
+  const baseSelect = {
+    id: true,
+    title: true,
+    platform: true,
+    status: true,
+    readStatus: true,
+    submittedAt: true,
+    isUrlOnly: true,
+    analyses: {
+      where: { isCurrent: true },
+      take: 1,
+      select: {
+        recommendedAction: true,
+        readingValueScore: true,
+        topicTags: true,
+      },
+    },
+  } satisfies Prisma.ContentItemSelect;
+
+  const items =
+    sortBy === "readingValue"
+      ? (
+          await db.contentItem.findMany({
+            where,
+            orderBy: [{ submittedAt: "desc" }],
+            select: baseSelect,
+          })
+        )
+          .sort((a, b) => {
+            const left = a.analyses[0]?.readingValueScore ?? -1;
+            const right = b.analyses[0]?.readingValueScore ?? -1;
+            return right - left || b.submittedAt.getTime() - a.submittedAt.getTime();
+          })
+          .slice((page - 1) * pageSize, page * pageSize)
+      : await db.contentItem.findMany({
       where,
-      orderBy:
-        sortBy === "readingValue"
-          ? [{ analyses: { _count: "desc" } }, { submittedAt: "desc" }]
-          : [{ submittedAt: "desc" }],
+      orderBy: [{ submittedAt: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: {
-        id: true,
-        title: true,
-        platform: true,
-        status: true,
-        readStatus: true,
-        submittedAt: true,
-        isUrlOnly: true,
-        analyses: {
-          where: { isCurrent: true },
-          take: 1,
-          select: {
-            recommendedAction: true,
-            readingValueScore: true,
-            topicTags: true,
-          },
-        },
-      },
-    }),
-  ]);
+      select: baseSelect,
+    });
 
   return NextResponse.json({
     items,

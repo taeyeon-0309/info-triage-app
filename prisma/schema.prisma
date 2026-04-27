@@ -119,6 +119,7 @@ model ContentItem {
   rawText        String?
   extractedText  String?
   summary        String?
+  note           String?
   platform       SourcePlatform
   author         String?
   publishedAt    DateTime?

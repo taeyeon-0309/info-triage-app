@@ -27,6 +27,14 @@ export async function POST(request: Request, context: AnalyzeRouteContext) {
 
   const content = await db.contentItem.findFirst({
     where: { id, userId },
+    include: {
+      source: {
+        select: {
+          isBlocked: true,
+          qualityScore: true,
+        },
+      },
+    },
   });
 
   if (!content) {
@@ -84,7 +92,19 @@ export async function POST(request: Request, context: AnalyzeRouteContext) {
       recentItems,
     });
 
-    const normalized = applyActionFallbackRules(generated.parsed);
+    const normalized = applyActionFallbackRules({
+      ...generated.parsed,
+      ...(content.source?.isBlocked
+        ? {
+            recommendedAction: "SKIP" as const,
+            sourceCredibilityScore: Math.min(generated.parsed.sourceCredibilityScore, 30),
+            skipReasons: [
+              ...generated.parsed.skipReasons,
+              "该来源已被拉黑，默认建议跳过",
+            ],
+          }
+        : {}),
+    });
 
     const nextVersion = (latestCurrent?.version ?? 0) + 1;
 
