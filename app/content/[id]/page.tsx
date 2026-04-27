@@ -29,6 +29,7 @@ export default async function ContentDetailPage({ params }: ContentDetailPagePro
       url: true,
       rawText: true,
       summary: true,
+      note: true,
       platform: true,
       author: true,
       submittedAt: true,

@@ -20,19 +20,39 @@ function buildTitle(input: CreateContentRequest): string {
 function normalizePayload(userId: string, input: CreateContentRequest): Prisma.ContentItemCreateInput {
   const normalizedRawText = input.rawText?.trim();
   const normalizedUrl = input.url?.trim();
+  const normalizedAuthor = input.author?.trim();
 
   const isUrlOnly = Boolean(normalizedUrl) && !normalizedRawText;
+  const sourceName = normalizedAuthor || normalizedUrl || `${input.platform} submission`;
 
   return {
     user: {
       connect: { id: userId },
     },
+    source: {
+      connectOrCreate: {
+        where: {
+          userId_name: {
+            userId,
+            name: sourceName,
+          },
+        },
+        create: {
+          user: {
+            connect: { id: userId },
+          },
+          name: sourceName,
+          platform: input.platform as SourcePlatform,
+          url: normalizedUrl,
+        },
+      },
+    },
     title: buildTitle(input),
     url: normalizedUrl,
     rawText: normalizedRawText,
-    summary: input.note?.trim() || null,
+    note: input.note?.trim() || null,
     platform: input.platform as SourcePlatform,
-    author: input.author?.trim() || null,
+    author: normalizedAuthor || null,
     status: ContentStatus.PENDING_ANALYSIS,
     isUrlOnly,
   };
